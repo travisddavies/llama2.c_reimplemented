@@ -36,13 +36,14 @@ typedef struct {
     // weights for matmulsl not dim == n_heads * head_size
     float* wq; // (layer, dim, n_heads * head_size)
     float* wk; // (layer, dim, n_kv_heads * head_size)
+    float* wv; // (layer, dim, n_kv_heads * head_size)
     float* wo; // (layer, n_heads * head_size, dim)
     // weights for ffn
     float* w1; // (layer, hidden_dim, dim)
     float* w2; // (layer, dim, hidden_dim)
     float* w3; // (layer, hidden_dim, dim)
     // final rms_norm
-    float* rms_float_weight; // (dim,)
+    float* rms_final_weight; // (dim,)
     // (optional) classifier weights for the logits, on the last layer
     float* wcls;
 } TransformerWeights;
@@ -92,5 +93,48 @@ void malloc_run_state(RunState* s, Config* p) {
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 || !s->q
         || !s->key_cache || !s->value_cache || !s->att || !s->logits) {
         fprintf(stderr, "malloc failed!\n");
+        exit(EXIT_FAILURE);
     }
+}
+
+void free_run_state(RunState* s) {
+    free(s->x);
+    free(s->xb);
+    free(s->xb2);
+    free(s->hb);
+    free(s->hb2);
+    free(s->q);
+    free(s->att);
+    free(s->logits);
+    free(s->key_cache);
+    free(s->value_cache);
+}
+
+void memory_map_weights(TransformerWeights* w, Config* p, float* ptr, int shared_weights) {
+    int head_size = p->dim / p->n_heads;
+    // make sure the multiplications below are done in 64bit to fit the parameter counts of 13B+ models
+    unsigned long long n_layers = p->n_layers;
+    w->token_embedding_table = ptr;
+    ptr += p->vocab_size * p->dim;
+    w->rms_att_weight = ptr;
+    ptr += n_layers * p->dim;
+    w->wq = ptr;
+    ptr += n_layers * p->dim * (p->n_heads * head_size);
+    w->wk = ptr;
+    ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
+    w->wv = ptr;
+    ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
+    w->wo = ptr;
+    ptr += n_layers * (p->n_heads * head_size) * p->dim;
+    w->rms_ffn_weight = ptr;
+    ptr += n_layers * p->dim;
+    w->w1 = ptr;
+    ptr += n_layers * p->hidden_dim * p->dim;
+    w->w3 = ptr;
+    ptr += n_layers * p->dim * p->hidden_dim;
+    w->rms_final_weight = ptr;
+    ptr += p->dim;
+    ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_real (for RoPE)
+    ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_real (for RoPE)
+    w->wcls = shared_weights ? w->token_embedding_table : ptr;
 }
