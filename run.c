@@ -12,7 +12,7 @@
 #else
     #include <unistd.h>
     #include <sys/mman.h>
-
+#endif
 // ---------------------------------------------------------------------------
 // Transformer model
 
@@ -52,5 +52,31 @@ typedef struct {
     // current wave of activation
     float *x; // activation at current time stamp (dim,)
     float *xb; // same, but inside a residual branch (dim,)
-    float *xb2 // an additional buffer just for convenience (dim,)
-} Runstate;
+    float *xb2; // an additional buffer just for convenience (dim,)
+    float *hb; // buffer for hidden dimension in the ffn (hidden_dim,)
+    float *hb2; // buffer for hidden dimension in the ffn (hidden_dim,)
+    float *q; // query (dim,)
+    float *k; // key (dim,)
+    float* v; // value (dim,)
+    float* att; // buffer for scores/attention values (n_heads, seq_len)
+    float* logits; // output logits
+    // kv cache
+    float* key_cache; // (layer, seq_len, dim)
+    float* value_cache; // (layer, seq_len, dim)
+} RunState;
+
+typedef struct {
+    Config config; // the hyperparameters of the architecture (the blueprint)
+    TransformerWeights weights; // the weights of the model
+    RunState state; // buffers or the "wave" of activations in the forward pass
+    // some more state needed to properly clean yp the memory mapping
+    int fd; // file descriptor for memory mapping
+    float* data; // memory mapped data pointer
+    ssize_t file_size; // size fo the checkpoint file in bytes
+} Transformer;
+
+void malloc_run_state(RunState* s, Config* p) {
+    // we calloc instead of malloc to keep valgrind happy
+    int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
+    s->x = calloc(p->dim)
+}
