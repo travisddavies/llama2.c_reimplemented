@@ -138,3 +138,32 @@ void memory_map_weights(TransformerWeights* w, Config* p, float* ptr, int shared
     ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_real (for RoPE)
     w->wcls = shared_weights ? w->token_embedding_table : ptr;
 }
+
+void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weights,
+                     int* fd, float** data, ssize_t* file_size) {
+    FILE *file = fopen(checkpoint, "rb");
+    if (!file) { fprintf(stderr, "Couldn't open file %s\n", checkpoint); exit(EXIT_FAILURE);}
+    // read in the config header
+    if (fread(config, sizeof(Config), 1, file) != 1) { exit(EXIT_FAILURE);}
+    // negative vocab size is hacky way of signaling unshared weights
+    int shared_weights = config->vocab_size > 0 ? 1 : 0;
+    config->vocab_size = abs(config->vocab_size);
+    // figure out the file size
+    fseek(file, 0, SEEK_END); // move file pointer to end of file
+    *file_size = ftell(file); // get the file size, in bytes
+    fclose(file);
+    // memory map the Transforner weights into the data pointer
+    *fd = open(checkpoint, O_RDONLY); // open in read only mode
+    if (*fd == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE);}
+    *data = mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
+    if (*data == MAP_FAILED) {fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE);}
+    float* weights_ptr = *data + sizeof(Config) / sizeof(float);
+    memory_map_weights(weights, config, weights_ptr, shared_weights);
+}
+
+void build_transformer(Transformer *t, char* checkpoint_path) {
+    // read in the Config and the weights from the checkpoint
+    read_checkpoint(checkpoint_path, &t->config, &t->weights, &t->fd, &t->data, &t->file_size);
+    // allocate the RunState buffers
+    malloc_run_state(&t->state, &t->config);
+}
