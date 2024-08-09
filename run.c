@@ -167,3 +167,48 @@ void build_transformer(Transformer *t, char* checkpoint_path) {
     // allocate the RunState buffers
     malloc_run_state(&t->state, &t->config);
 }
+
+void free_transformer(Transformer* t) {
+    if (t->data != MAP_FAILED) { munmap(t->data, t->file_size); }
+    if (t->fd != -1) { close(t->fd); }
+    // free the RunState buffers
+    free_run_state(&t->state);
+}
+
+// ----------------------------------------------------------------------------
+// neural net blocks; the dynamics of the transformer
+
+void rmsnorm(float* o, float* x, float* weight, int size) {
+    // calculate sum of squares
+    float ss = 0.0f;
+    for (int j = 0; j < size; j++) {
+        ss += x[j] * x[j];
+    }
+    ss /= size;
+    ss += 1e-5f;
+    ss = 1.0f / sqrtf(ss);
+    // normalise and scale
+    for (int j = 0; j < size; j++) {
+       o[j] = weight[j] * (ss * x[j]);
+    }
+}
+
+void softmax(float* x, int size) {
+    // fine max value (for numerical stability)
+    float max_val = x[0];
+    for (int i = 1; i < size; i++) {
+        if (x[i] > max_val) {
+            max_val = x[i];
+        }
+    }
+    // exp and sum
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        x[i] = expf(x[i] - max_val);
+        sum += x[i];
+    }
+    // normalise
+    for (int i = 0; i < size; i++) {
+        x[i] /= sum;
+    }
+}
