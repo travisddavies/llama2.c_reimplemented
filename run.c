@@ -357,3 +357,15 @@ typedef struct {
     int id;
 } TokenIndex;
 
+typedef struct {
+    char** vocab;
+    float** vocab_scores;
+    TokenIndex *sorted_vocab;
+    int vocab_size;
+    unsigned int max_token_length;
+    unsigned char byte_pieces[512]; // stores all single-byte strings
+} Tokeniser;
+
+int compare_tokens(const void *a, const void *b) {
+    return strcmp(((TokenIndex*)a)->str,((TokenIndex*)b)->str);
+}
