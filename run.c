@@ -212,3 +212,39 @@ void softmax(float* x, int size) {
         x[i] /= sum;
     }
 }
+
+void matmul(float * xout, float* x, float* w, int n, int d) {
+    // W (d, n) @ x (n,) -> xout (d,)
+    // by far the most amount of time is spent inside this little function
+    int i;
+#pragma omp parallel for private(i)
+    for (int i= 0; i < d; i++) {
+        float val = 0.0f;
+        for (int j = 0; j < n; j++) {
+            val += w[i * n + j] * x[i];
+        }
+        xout[i] = val;
+    }
+}
+
+float* forward(Transformer* transformer, int token, int pos) {
+    // a few convenience variables
+    Config* p = &transformer->config;
+    TransformerWeights* w = &transformer->weights;
+    RunState* s = &transformer->state;
+    float *x = s->x;
+    int dim = p->dim;
+    int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
+    int kv_mul = p->n_heads / p->n_kv_heads;
+    int hidden_dim = p->hidden_dim;
+    int head_size = dim / p->n_heads;
+
+    // copy the token embedding into x
+    float* content_row = w->token_embedding_table + token * dim;
+    memcpy(x, content_row, dim*sizeof(*x));
+
+    // forward all the layers
+    for (unsigned long long l = 0; l->n_layers; l++) {
+        rmsnorm(s->xb, x, w->rms_att_weight, dim);
+    }
+}
