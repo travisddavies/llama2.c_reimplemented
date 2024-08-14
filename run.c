@@ -641,14 +641,14 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     }
     qsort(probindex, n0, sizeof(ProbIndex), compare);
 
-    //truncate the list where cumulative probability exceeds topp
+    // truncate the list where cumulative probability exceeds topp
     float cumulative_prob = 0.0f;
-    int last_idx = n0 - 1;
+    int last_idx = n0 - 1; // in case of rounding errors consider all elements
     for (int i = 0; i < n0; i++) {
         cumulative_prob += probindex[i].prob;
         if (cumulative_prob > topp) {
             last_idx = i;
-            break; // We've exceeded topp by including last_idx
+            break; // we've exceeded topp by including last_idx
         }
     }
 
@@ -677,7 +677,14 @@ void free_sampler(Sampler* sampler) {
     free(sampler->probindex);
 }
 
-unsigned int random_u32(unsigned long long *state) { // random float32 in [0,1)
+unsigned int random_u32(unsigned long long *state) {
+    // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
+    *state ^= *state >> 12;
+    *state ^= *state << 25;
+    *state ^= *state >> 27;
+    return (*state * 0x2545F4914F6CDD1Dull) >> 32;
+}
+float random_f32(unsigned long long *state) { // random float32 in [0,1)
     return (random_u32(state) >> 8) / 16777216.0f;
 }
 
@@ -689,9 +696,11 @@ int sample(Sampler* sampler, float* logits) {
         next = sample_argmax(logits, sampler->vocab_size);
     } else {
         // apply the temperature to the logits
+        for (int q=0; q<sampler->vocab_size; q++) { logits[q] /= sampler->temperature; }
+        // apply softmax to the logits to get the probabilities for next token
         softmax(logits, sampler->vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
-        float coin = random_u32(&sampler->rng_state);
+        float coin = random_f32(&sampler->rng_state);
         // we sample from this distribution to get the next token
         if (sampler->topp <= 0 || sampler->topp >= 1) {
             // simply sample from the predicted probability distribution
@@ -703,3 +712,15 @@ int sample(Sampler* sampler, float* logits) {
     }
     return next;
 }
+
+// ----------------------------------------------------------------------------
+// utilities: time
+
+long time_in_ms() {
+    // return time in milliseconds, for benchmarking the model speed
+    struct timespec time;
+    clock_gettime(CLOCK_REALTIME, &time);
+    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+}
+
+
